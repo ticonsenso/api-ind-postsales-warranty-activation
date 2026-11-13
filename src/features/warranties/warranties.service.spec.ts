@@ -8,6 +8,7 @@ import { ClientAlreadyExistsError } from '../clients/errors/client-already-exist
 import { NewClientDto } from './dto/new-client.dto';
 import { RegisterWarrantyRequestDto } from './dto/register-warranty-request.dto';
 import { PurchaseDateInFutureError } from './errors/purchase-date-in-future.error';
+import { SerialAlreadyRegisteredError } from './errors/serial-already-registered.error';
 import { WarrantiesService } from './warranties.service';
 
 const WARRANTY_ID = '5b3c2f1e-8a4d-4c6b-9e2f-1a7d3b5c9e01';
@@ -119,6 +120,18 @@ describe('WarrantiesService', () => {
       expect(odata.post).not.toHaveBeenCalled();
       expect(clients.createClient).not.toHaveBeenCalled();
       expect(clients.acceptPendingConsents).not.toHaveBeenCalled();
+    });
+
+    it('rejects a serial that already has a warranty before creating anything', async () => {
+      odata.get.mockImplementation((_entity, _schema, params) =>
+        Promise.resolve({ value: String(params?.$filter).startsWith('INDNombre') ? [{ Id: 'other-warranty' }] : [] })
+      );
+
+      await expect(service.register(WARRANTY_ID, buildNewClientDto(), invoice)).rejects.toBeInstanceOf(
+        SerialAlreadyRegisteredError
+      );
+      expect(clients.createClient).not.toHaveBeenCalled();
+      expect(odata.post).not.toHaveBeenCalled();
     });
 
     it('rejects a purchase date in the future without touching Creatio', async () => {

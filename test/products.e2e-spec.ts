@@ -25,6 +25,7 @@ describe('Products API (e2e)', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    doubles.odata.get.mockResolvedValue({ value: [] });
   });
 
   describe('GET /v1/products/serial/:serialNumber', () => {
@@ -49,6 +50,20 @@ describe('Products API (e2e)', () => {
         { sernr: '1000000000001' },
         expect.anything()
       );
+    });
+
+    it('answers 422 SERIAL_ALREADY_REGISTERED without asking SAP when the serial has a warranty', async () => {
+      doubles.odata.get.mockResolvedValue({ value: [{ Id: 'registered-warranty' }] });
+
+      const response = await request(app.getHttpServer()).get('/v1/products/serial/1000000000005').expect(422);
+
+      expect(response.body).toMatchObject({
+        data: null,
+        message: 'El producto ya se encuentra registrado, por favor intentar con otro.',
+        error: 'SERIAL_ALREADY_REGISTERED',
+        statusCode: 422,
+      });
+      expect(doubles.odata.callRestService).not.toHaveBeenCalled();
     });
 
     it.each([
