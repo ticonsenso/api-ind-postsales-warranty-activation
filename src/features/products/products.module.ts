@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TtlCache } from '../../common/cache/ttl-cache';
 import { CreatioModule } from '../../infrastructure/creatio/creatio.module';
 import { PRODUCT_CACHE, PRODUCT_CACHE_SWEEP_INTERVAL_MS, PRODUCT_CACHE_TTL_MS } from './products.constants';
+import { WarrantiesModule } from '../warranties/warranties.module';
 import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
 import { ProductResponseDto } from './dto/product-response.dto';
@@ -16,7 +17,7 @@ import { ProductResponseDto } from './dto/product-response.dto';
  * @since 2026-09-21
  */
 @Module({
-  imports: [CreatioModule],
+  imports: [CreatioModule, WarrantiesModule],
   controllers: [ProductsController],
   providers: [
     ProductsService,

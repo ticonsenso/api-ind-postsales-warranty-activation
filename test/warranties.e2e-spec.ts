@@ -42,6 +42,7 @@ const FORM_WITHOUT_CLIENT: Record<string, string> = Object.fromEntries(
 
 interface CreatioRecords {
   warranties?: unknown[];
+  warrantiesBySerial?: unknown[];
   accountsById?: unknown[];
   accountsByIdentification?: unknown[];
 }
@@ -66,10 +67,16 @@ describe('Warranties API (e2e)', () => {
   });
 
   /** Simula las consultas a Creatio: garantías por `Id` y cuentas por `Id` o por identificación. */
-  const givenCreatio = ({ warranties = [], accountsById = [], accountsByIdentification = [] }: CreatioRecords = {}) => {
+  const givenCreatio = ({
+    warranties = [],
+    warrantiesBySerial = [],
+    accountsById = [],
+    accountsByIdentification = [],
+  }: CreatioRecords = {}) => {
     doubles.odata.get.mockImplementation((entity: string, _schema: unknown, params?: { $filter?: string }) => {
       if (entity !== 'Account') {
-        return Promise.resolve({ value: warranties });
+        const bySerial = params?.$filter?.startsWith('INDNombre') ?? false;
+        return Promise.resolve({ value: bySerial ? warrantiesBySerial : warranties });
       }
       const byIdentification = params?.$filter?.startsWith('INDNumeroIdentificacion') ?? false;
       return Promise.resolve({ value: byIdentification ? accountsByIdentification : accountsById });
@@ -275,6 +282,21 @@ describe('Warranties API (e2e)', () => {
 
       expect(response.body).toMatchObject({ data: null, error: 'CLIENT_ALREADY_EXISTS', statusCode: 422 });
       expect(doubles.odata.post).not.toHaveBeenCalled();
+    });
+
+    it('answers 422 without creating anything when the serial already has a registered warranty', async () => {
+      givenCreatio({ warrantiesBySerial: [{ Id: 'other-warranty' }], accountsById: [ACCOUNT] });
+
+      const response = await submitWarranty().expect(422);
+
+      expect(response.body).toMatchObject({ data: null, error: 'SERIAL_ALREADY_REGISTERED', statusCode: 422 });
+      expect(doubles.odata.get).toHaveBeenCalledWith('INDProductoEnCliente', expect.anything(), {
+        $filter: "INDNombre eq 'SN123456789'",
+        $select: 'Id',
+        $top: 1,
+      });
+      expect(doubles.odata.post).not.toHaveBeenCalled();
+      expect(doubles.odata.uploadFile).not.toHaveBeenCalled();
     });
 
     it('removes the new client when the invoice cannot be attached', async () => {

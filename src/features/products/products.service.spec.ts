@@ -3,6 +3,8 @@ import { TtlCache } from '../../common/cache/ttl-cache';
 import { ExternalServiceError } from '../../common/errors/external-service.error';
 import { CreatioODataClient } from '../../infrastructure/creatio/creatio-odata.client';
 import { serialLookupSchema } from './creatio/creatio-product.schema';
+import { SerialAlreadyRegisteredError } from '../warranties/errors/serial-already-registered.error';
+import { WarrantiesService } from '../warranties/warranties.service';
 import { ProductResponseDto } from './dto/product-response.dto';
 import { PRODUCT_CACHE_TTL_MS } from './products.constants';
 import { ProductsService } from './products.service';
@@ -15,13 +17,19 @@ const PRODUCT = {
 
 describe('ProductsService', () => {
   let odata: jest.Mocked<Pick<CreatioODataClient, 'callRestService'>>;
+  let warranties: jest.Mocked<Pick<WarrantiesService, 'assertSerialIsNotRegistered'>>;
   let cache: TtlCache<ProductResponseDto>;
   let service: ProductsService;
 
   beforeEach(() => {
     odata = { callRestService: jest.fn() };
+    warranties = { assertSerialIsNotRegistered: jest.fn().mockResolvedValue(undefined) };
     cache = new TtlCache<ProductResponseDto>(PRODUCT_CACHE_TTL_MS);
-    service = new ProductsService(odata as unknown as CreatioODataClient, cache);
+    service = new ProductsService(
+      odata as unknown as CreatioODataClient,
+      warranties as unknown as WarrantiesService,
+      cache
+    );
   });
 
   afterEach(() => {
@@ -45,6 +53,29 @@ describe('ProductsService', () => {
         'ConsultarPorSerie',
         { sernr: '6500304730294' },
         serialLookupSchema
+      );
+    });
+
+    it('rejects a serial that already has a warranty without asking Creatio for the product', async () => {
+      warranties.assertSerialIsNotRegistered.mockRejectedValue(new SerialAlreadyRegisteredError());
+
+      await expect(service.getProductBySerialNumber('6500304730294')).rejects.toBeInstanceOf(
+        SerialAlreadyRegisteredError
+      );
+      expect(odata.callRestService).not.toHaveBeenCalled();
+    });
+
+    it('checks the registration on every lookup, even when the product is cached', async () => {
+      odata.callRestService.mockResolvedValue({
+        success: true,
+        product: { id: PRODUCT.Id, name: PRODUCT.Name, code: PRODUCT.Code },
+      });
+
+      await service.getProductBySerialNumber('6500304730294');
+      warranties.assertSerialIsNotRegistered.mockRejectedValue(new SerialAlreadyRegisteredError());
+
+      await expect(service.getProductBySerialNumber('6500304730294')).rejects.toBeInstanceOf(
+        SerialAlreadyRegisteredError
       );
     });
 

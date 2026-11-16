@@ -18,5 +18,6 @@ import { WarrantiesService } from './warranties.service';
   imports: [CreatioModule, InvoiceFileModule, ClientsModule],
   controllers: [WarrantiesController],
   providers: [WarrantiesService],
+  exports: [WarrantiesService],
 })
 export class WarrantiesModule {}

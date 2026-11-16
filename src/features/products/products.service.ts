@@ -8,6 +8,7 @@ import {
   SERIAL_LOOKUP_SERVICE,
   serialLookupSchema,
 } from './creatio/creatio-product.schema';
+import { WarrantiesService } from '../warranties/warranties.service';
 import { ProductResponseDto } from './dto/product-response.dto';
 import { PRODUCT_CACHE } from './products.constants';
 
@@ -31,6 +32,7 @@ const CREATIO_REJECTED_CODE = 'CREATIO_REJECTED_REQUEST';
 export class ProductsService {
   constructor(
     private readonly odata: CreatioODataClient,
+    private readonly warranties: WarrantiesService,
     @Inject(PRODUCT_CACHE) private readonly cache: TtlCache<ProductResponseDto>
   ) {}
 
@@ -43,11 +45,15 @@ export class ProductsService {
    *
    * @param serialNumber - Número de serie ya validado
    * @returns El producto de la serie, con los nombres de columna de Creatio
+   * @throws {SerialAlreadyRegisteredError} Si la serie ya tiene una garantía registrada (siempre se verifica)
    * @throws {NotFoundException} `SERIAL_NOT_FOUND` si SAP no conoce la serie; `PRODUCT_NOT_FOUND` si el material
    *   no existe como producto en Creatio
    * @throws {ExternalServiceError} Si Creatio falla o responde con un motivo de rechazo no previsto
    */
   async getProductBySerialNumber(serialNumber: string): Promise<ProductResponseDto> {
+    // El estado de registro cambia, por eso se consulta siempre y nunca se cachea.
+    await this.warranties.assertSerialIsNotRegistered(serialNumber);
+
     const cached = this.cache.get(serialNumber);
     if (cached) {
       return cached;

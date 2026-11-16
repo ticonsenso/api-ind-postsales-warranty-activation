@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { assertUuid } from '../../common/validation/assert-uuid';
 import { CreatioODataClient } from '../../infrastructure/creatio/creatio-odata.client';
+import { toODataStringLiteral } from '../../infrastructure/creatio/odata-literal';
 import { InvoiceFile } from '../../common/invoice-file/invoice-file';
 import { ClientsService } from '../clients/clients.service';
 import { ACCOUNT_ENTITY } from '../clients/creatio/creatio-account.schema';
@@ -10,6 +11,7 @@ import { toFileUpload, toWarrantyPayload } from './creatio/creatio-warranty.mapp
 import { WARRANTY_ENTITY, WARRANTY_FIELDS, WARRANTY_FILE_ENTITY } from './creatio/creatio-warranty.schema';
 import { RegisterWarrantyRequestDto } from './dto/register-warranty-request.dto';
 import { PurchaseDateInFutureError } from './errors/purchase-date-in-future.error';
+import { SerialAlreadyRegisteredError } from './errors/serial-already-registered.error';
 
 const ISO_DATE_LENGTH = 10;
 const INVALID_WARRANTY_ID_CODE = 'INVALID_WARRANTY_ID';
@@ -58,6 +60,7 @@ export class WarrantiesService {
    * @param invoice - Factura validada en tipo y tamaño
    * @returns El identificador de la garantía y si fue creada ahora o ya existía
    * @throws {PurchaseDateInFutureError} Si la fecha de compra es posterior a hoy
+   * @throws {SerialAlreadyRegisteredError} Si la serie ya tiene una garantía registrada
    * @throws {InvalidRequestError} Si `idempotencyKey` no es un UUID
    * @throws {ClientAlreadyExistsError} Si el cliente nuevo tiene una identificación que ya está registrada
    * @throws {NotFoundException} Si el cliente existente indicado no está en el CRM
@@ -74,8 +77,42 @@ export class WarrantiesService {
     if (await this.exists(idempotencyKey)) {
       return { warrantyId: idempotencyKey, created: false };
     }
+    await this.assertSerialIsNotRegistered(dto.serialNumber);
     await this.create(idempotencyKey, dto, invoice);
     return { warrantyId: idempotencyKey, created: true };
+  }
+
+  /**
+   * Indica si el número de serie ya tiene una garantía registrada (por cualquier cliente).
+   *
+   * @param serialNumber - Número de serie ya validado
+   * @returns `true` si existe un producto de cliente con esa serie
+   * @throws {ExternalServiceError} Si Creatio falla o rechaza la consulta
+   * @author Esteban
+   * @since 2026-11-13
+   */
+  async isSerialRegistered(serialNumber: string): Promise<boolean> {
+    const { value } = await this.odata.get(WARRANTY_ENTITY, warrantyLookupSchema, {
+      $filter: `${WARRANTY_FIELDS.serialNumber} eq ${toODataStringLiteral(serialNumber)}`,
+      $select: WARRANTY_FIELDS.id,
+      $top: 1,
+    });
+    return value.length > 0;
+  }
+
+  /**
+   * Rechaza la operación si el número de serie ya tiene una garantía registrada.
+   *
+   * @param serialNumber - Número de serie ya validado
+   * @throws {SerialAlreadyRegisteredError} Si la serie ya está registrada
+   * @throws {ExternalServiceError} Si Creatio falla o rechaza la consulta
+   * @author Esteban
+   * @since 2026-11-13
+   */
+  async assertSerialIsNotRegistered(serialNumber: string): Promise<void> {
+    if (await this.isSerialRegistered(serialNumber)) {
+      throw new SerialAlreadyRegisteredError();
+    }
   }
 
   private async exists(warrantyId: string): Promise<boolean> {
