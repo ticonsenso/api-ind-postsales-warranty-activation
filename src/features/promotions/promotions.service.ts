@@ -1,8 +1,8 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { TtlCache } from '../../common/cache/ttl-cache';
 import { CACHE_STATUS } from '../../common/constants/http.constants';
 import { CreatioODataClient } from '../../infrastructure/creatio/creatio-odata.client';
-import { PROMOTION_CACHE, PROMOTION_CACHE_KEY, PROMOTION_STALE_RETRY_MS } from './promotions.constants';
+import { PROMOTION_CACHE, PROMOTION_CACHE_KEY } from './promotions.constants';
 import {
   PROMOTION_ENTITY,
   PROMOTION_FIELDS,
@@ -19,12 +19,6 @@ const PROMOTION_ACTIVE_FILTER = `${PROMOTION_FIELDS.active} eq true`;
 const PROMOTION_ORDER_BY = `${PROMOTION_FIELDS.order} asc,CreatedOn desc`;
 
 type CacheStatus = (typeof CACHE_STATUS)[keyof typeof CACHE_STATUS];
-
-/** Entrada de la caché: la tabla y si es la última copia válida servida porque Creatio falló. */
-export interface CachedPromotions {
-  promotions: CreatioPromotion[];
-  stale: boolean;
-}
 
 /** Promociones visibles y de dónde salió la tabla: de la caché (`HIT`), de Creatio (`MISS`) o de la última copia válida (`STALE`). */
 export interface ActivePromotionsResult {
@@ -48,14 +42,9 @@ export interface ActivePromotionsResult {
  */
 @Injectable()
 export class PromotionsService {
-  private readonly logger = new Logger(PromotionsService.name);
-
-  /** Última tabla obtenida de Creatio con éxito; sobrevive al vencimiento de la entrada de la caché. */
-  private lastValid: CreatioPromotion[] | null = null;
-
   constructor(
     private readonly odata: CreatioODataClient,
-    @Inject(PROMOTION_CACHE) private readonly cache: TtlCache<CachedPromotions>
+    @Inject(PROMOTION_CACHE) private readonly cache: TtlCache<CreatioPromotion[]>
   ) {}
 
   /**
@@ -67,7 +56,7 @@ export class PromotionsService {
   async getActivePromotions(): Promise<ActivePromotionsResult> {
     const cached = this.cache.get(PROMOTION_CACHE_KEY);
     const { promotions, cacheStatus } = cached
-      ? { promotions: cached.promotions, cacheStatus: cached.stale ? CACHE_STATUS.stale : CACHE_STATUS.hit }
+      ? { promotions: cached, cacheStatus: CACHE_STATUS.hit }
       : await this.refreshPromotions();
     const now = Date.now();
     return {
@@ -81,21 +70,11 @@ export class PromotionsService {
     this.cache.clear();
   }
 
-  /** Consulta a Creatio; si falla y hay una copia válida anterior, la sirve y la cachea por `PROMOTION_STALE_RETRY_MS`. */
+  /** Consulta a Creatio y guarda la tabla en la caché. */
   private async refreshPromotions(): Promise<{ promotions: CreatioPromotion[]; cacheStatus: CacheStatus }> {
-    try {
-      const promotions = await this.fetchPromotions();
-      this.lastValid = promotions;
-      this.cache.set(PROMOTION_CACHE_KEY, { promotions, stale: false });
-      return { promotions, cacheStatus: CACHE_STATUS.miss };
-    } catch (error) {
-      if (!this.lastValid) {
-        throw error;
-      }
-      this.logger.warn({ event: 'promotions.stale_fallback', retryInMs: PROMOTION_STALE_RETRY_MS, error });
-      this.cache.set(PROMOTION_CACHE_KEY, { promotions: this.lastValid, stale: true }, PROMOTION_STALE_RETRY_MS);
-      return { promotions: this.lastValid, cacheStatus: CACHE_STATUS.stale };
-    }
+    const promotions = await this.fetchPromotions();
+    this.cache.set(PROMOTION_CACHE_KEY, promotions);
+    return { promotions, cacheStatus: CACHE_STATUS.miss };
   }
 
   private async fetchPromotions(): Promise<CreatioPromotion[]> {

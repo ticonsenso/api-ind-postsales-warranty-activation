@@ -15,16 +15,17 @@ const PROMOTION = {
   INDVigenciaHasta: null,
 };
 
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+
 describe('Promotions API (e2e)', () => {
   let app: NestExpressApplication;
   let doubles: TestDoubles;
 
   beforeAll(async () => {
-    ({ app, doubles } = await createTestApp({
-      RATE_LIMIT_MAX_REQUESTS: '1000',
-      STRICT_RATE_LIMIT_MAX_REQUESTS: '1000',
-      CACHE_ADMIN_ENABLED: 'true',
-    }));
+    ({ app, doubles } = await createTestApp(
+      { RATE_LIMIT_MAX_REQUESTS: '1000', STRICT_RATE_LIMIT_MAX_REQUESTS: '1000', CACHE_ADMIN_ENABLED: 'true' },
+      CACHE_TTL_MS
+    ));
   });
 
   afterAll(async () => {

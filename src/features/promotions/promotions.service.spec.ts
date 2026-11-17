@@ -1,12 +1,11 @@
 import { TtlCache } from '../../common/cache/ttl-cache';
 import { ExternalServiceError } from '../../common/errors/external-service.error';
 import { CreatioODataClient } from '../../infrastructure/creatio/creatio-odata.client';
-import { PROMOTION_CACHE_TTL_MS } from './promotions.constants';
-import { CachedPromotions, PromotionsService } from './promotions.service';
+import { PromotionsService } from './promotions.service';
 import { CreatioPromotion, promotionListSchema } from './creatio/creatio-promotion.schema';
 
 const HOUR_MS = 60 * 60 * 1000;
-const STALE_RETRY_MS = 15 * 60 * 1000;
+const TEST_CACHE_TTL_MS = 2 * HOUR_MS;
 
 const buildPromotion = (overrides: Partial<CreatioPromotion> = {}): CreatioPromotion => ({
   Id: '5b3c2f1e-8a4d-4c6b-9e2f-1a7d3b5c9e01',
@@ -24,12 +23,12 @@ const buildPromotion = (overrides: Partial<CreatioPromotion> = {}): CreatioPromo
 
 describe('PromotionsService', () => {
   let odata: jest.Mocked<Pick<CreatioODataClient, 'get'>>;
-  let cache: TtlCache<CachedPromotions>;
+  let cache: TtlCache<CreatioPromotion[]>;
   let service: PromotionsService;
 
   beforeEach(() => {
     odata = { get: jest.fn() };
-    cache = new TtlCache<CachedPromotions>(PROMOTION_CACHE_TTL_MS);
+    cache = new TtlCache<CreatioPromotion[]>(TEST_CACHE_TTL_MS);
     service = new PromotionsService(odata as unknown as CreatioODataClient, cache);
   });
 
@@ -116,51 +115,14 @@ describe('PromotionsService', () => {
     expect(odata.get).toHaveBeenCalledTimes(2);
   });
 
-  describe('when Creatio fails after a successful query', () => {
-    const lastValid = buildPromotion({ Id: 'last-valid' });
+  it('fails instead of serving an older copy when Creatio fails after a successful query', async () => {
+    jest.useFakeTimers();
     const failure = new ExternalServiceError('CREATIO_UNAVAILABLE');
+    odata.get.mockResolvedValueOnce({ value: [buildPromotion()] }).mockRejectedValueOnce(failure);
 
-    beforeEach(async () => {
-      jest.useFakeTimers();
-      odata.get.mockResolvedValueOnce({ value: [lastValid] });
-      await service.getActivePromotions();
-      jest.setSystemTime(Date.now() + 2 * HOUR_MS + 1);
-      odata.get.mockRejectedValueOnce(failure);
-    });
+    await service.getActivePromotions();
+    jest.setSystemTime(Date.now() + 2 * HOUR_MS + 1);
 
-    it('serves the last valid copy and reports STALE instead of failing', async () => {
-      await expect(service.getActivePromotions()).resolves.toEqual({ promotions: [lastValid], cacheStatus: 'STALE' });
-    });
-
-    it('does not query Creatio again during the next 15 minutes', async () => {
-      await service.getActivePromotions();
-      jest.setSystemTime(Date.now() + STALE_RETRY_MS - 1);
-
-      await expect(service.getActivePromotions()).resolves.toEqual({ promotions: [lastValid], cacheStatus: 'STALE' });
-      expect(odata.get).toHaveBeenCalledTimes(2);
-    });
-
-    it('queries Creatio again after 15 minutes and caches the fresh table for the full TTL', async () => {
-      const fresh = buildPromotion({ Id: 'fresh' });
-      await service.getActivePromotions();
-      jest.setSystemTime(Date.now() + STALE_RETRY_MS);
-      odata.get.mockResolvedValueOnce({ value: [fresh] });
-
-      await expect(service.getActivePromotions()).resolves.toEqual({ promotions: [fresh], cacheStatus: 'MISS' });
-      jest.setSystemTime(Date.now() + 2 * HOUR_MS - 1);
-      await expect(service.getActivePromotions()).resolves.toEqual({ promotions: [fresh], cacheStatus: 'HIT' });
-      expect(odata.get).toHaveBeenCalledTimes(3);
-    });
-
-    it('keeps serving the last valid copy for another 15 minutes if the retry fails too', async () => {
-      await service.getActivePromotions();
-      jest.setSystemTime(Date.now() + STALE_RETRY_MS);
-      odata.get.mockRejectedValueOnce(failure);
-
-      await expect(service.getActivePromotions()).resolves.toEqual({ promotions: [lastValid], cacheStatus: 'STALE' });
-      jest.setSystemTime(Date.now() + STALE_RETRY_MS - 1);
-      await service.getActivePromotions();
-      expect(odata.get).toHaveBeenCalledTimes(3);
-    });
+    await expect(service.getActivePromotions()).rejects.toBe(failure);
   });
 });
