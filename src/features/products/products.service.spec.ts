@@ -2,7 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { TtlCache } from '../../common/cache/ttl-cache';
 import { ExternalServiceError } from '../../common/errors/external-service.error';
 import { CreatioODataClient } from '../../infrastructure/creatio/creatio-odata.client';
-import { serialLookupSchema } from './creatio/creatio-product.schema';
+import { productLookupSchema, serialLookupSchema } from './creatio/creatio-product.schema';
 import { SerialAlreadyRegisteredError } from '../warranties/errors/serial-already-registered.error';
 import { WarrantiesService } from '../warranties/warranties.service';
 import { ProductResponseDto } from './dto/product-response.dto';
@@ -16,13 +16,13 @@ const PRODUCT = {
 };
 
 describe('ProductsService', () => {
-  let odata: jest.Mocked<Pick<CreatioODataClient, 'callRestService'>>;
+  let odata: jest.Mocked<Pick<CreatioODataClient, 'callRestService' | 'get'>>;
   let warranties: jest.Mocked<Pick<WarrantiesService, 'assertSerialIsNotRegistered'>>;
   let cache: TtlCache<ProductResponseDto>;
   let service: ProductsService;
 
   beforeEach(() => {
-    odata = { callRestService: jest.fn() };
+    odata = { callRestService: jest.fn(), get: jest.fn() };
     warranties = { assertSerialIsNotRegistered: jest.fn().mockResolvedValue(undefined) };
     cache = new TtlCache<ProductResponseDto>(PRODUCT_CACHE_TTL_MS);
     service = new ProductsService(
@@ -108,6 +108,59 @@ describe('ProductsService', () => {
       odata.callRestService.mockRejectedValue(failure);
 
       await expect(service.getProductBySerialNumber('6500304730294')).rejects.toBe(failure);
+    });
+  });
+
+  describe('getProductByCode', () => {
+    it('queries the Creatio Product table by Code and returns the first match', async () => {
+      odata.get.mockResolvedValue({ value: [PRODUCT] });
+
+      await expect(service.getProductByCode('90002756')).resolves.toEqual(PRODUCT);
+
+      expect(odata.get).toHaveBeenCalledWith('Product', productLookupSchema, {
+        $filter: "Code eq '90002756'",
+        $select: 'Id,Name,Code',
+        $top: 1,
+      });
+    });
+
+    it('escapes quotes so the code cannot alter the filter', async () => {
+      odata.get.mockResolvedValue({ value: [PRODUCT] });
+
+      await service.getProductByCode("a' or 1 eq 1");
+
+      expect(odata.get).toHaveBeenCalledWith(
+        'Product',
+        productLookupSchema,
+        expect.objectContaining({ $filter: "Code eq 'a'' or 1 eq 1'" })
+      );
+    });
+
+    it('throws PRODUCT_NOT_FOUND when no product has that code', async () => {
+      odata.get.mockResolvedValue({ value: [] });
+
+      await expect(
+        service.getProductByCode('00000000').catch((reason: unknown) => (reason as NotFoundException).getResponse())
+      ).resolves.toMatchObject({ code: 'PRODUCT_NOT_FOUND' });
+    });
+
+    it('caches a found code apart from serials and does not cache a missing one', async () => {
+      odata.get.mockResolvedValueOnce({ value: [PRODUCT] }).mockResolvedValue({ value: [] });
+
+      await service.getProductByCode('90002756');
+      await service.getProductByCode('90002756');
+      await service.getProductByCode('11111111').catch(() => undefined);
+      await service.getProductByCode('11111111').catch(() => undefined);
+
+      expect(odata.get).toHaveBeenCalledTimes(3);
+      expect(cache.get('90002756')).toBeUndefined();
+    });
+
+    it('propagates Creatio failures untouched', async () => {
+      const failure = new ExternalServiceError('CREATIO_UNAVAILABLE');
+      odata.get.mockRejectedValue(failure);
+
+      await expect(service.getProductByCode('90002756')).rejects.toBe(failure);
     });
   });
 

@@ -24,3 +24,24 @@ export const serialLookupSchema = z.discriminatedUnion('success', [
   }),
   z.object({ success: z.literal(false), code: z.string() }),
 ]);
+
+/** Conjunto de entidades de los productos de Creatio. */
+export const PRODUCT_ENTITY = 'Product';
+
+/** Columnas de la entidad de producto que consulta el BFF; `Code` guarda el código SAP del material. */
+export const PRODUCT_FIELDS = {
+  id: 'Id',
+  name: 'Name',
+  code: 'Code',
+} as const;
+
+/** Forma esperada de la respuesta de una consulta de productos: `value` viene vacío si no hay coincidencias. */
+export const productLookupSchema = z.object({
+  value: z.array(
+    z.object({
+      [PRODUCT_FIELDS.id]: z.string(),
+      [PRODUCT_FIELDS.name]: z.string(),
+      [PRODUCT_FIELDS.code]: z.string(),
+    })
+  ),
+});

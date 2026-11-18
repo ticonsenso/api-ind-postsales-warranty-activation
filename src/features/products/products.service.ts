@@ -2,10 +2,14 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { TtlCache } from '../../common/cache/ttl-cache';
 import { ExternalServiceError } from '../../common/errors/external-service.error';
 import { CreatioODataClient } from '../../infrastructure/creatio/creatio-odata.client';
+import { toODataStringLiteral } from '../../infrastructure/creatio/odata-literal';
 import {
+  PRODUCT_ENTITY,
+  PRODUCT_FIELDS,
   SERIAL_LOOKUP_CODES,
   SERIAL_LOOKUP_METHOD,
   SERIAL_LOOKUP_SERVICE,
+  productLookupSchema,
   serialLookupSchema,
 } from './creatio/creatio-product.schema';
 import { WarrantiesService } from '../warranties/warranties.service';
@@ -15,6 +19,9 @@ import { PRODUCT_CACHE } from './products.constants';
 const PRODUCT_NOT_FOUND_CODE = 'PRODUCT_NOT_FOUND';
 const SERIAL_NOT_FOUND_CODE = 'SERIAL_NOT_FOUND';
 const CREATIO_REJECTED_CODE = 'CREATIO_REJECTED_REQUEST';
+const PRODUCT_SELECT = Object.values(PRODUCT_FIELDS).join(',');
+/** Prefijo de las entradas de caché por código SAP, para no mezclarlas con las de número de serie. */
+const CODE_CACHE_KEY_PREFIX = 'code:';
 
 /**
  * Servicio de consulta de productos por número de serie, vía el servicio de Creatio que consulta a SAP.
@@ -79,5 +86,37 @@ export class ProductsService {
       default:
         throw new ExternalServiceError(CREATIO_REJECTED_CODE);
     }
+  }
+
+  /**
+   * Obtiene el producto de Creatio cuyo código SAP (columna `Code` de `Product`) es el indicado.
+   *
+   * Es la alternativa cuando SAP no reconoce la serie (p. ej. productos importados): el cliente
+   * ingresa el código del material y se busca directamente en la tabla de productos de Creatio.
+   * Solo se cachean los resultados exitosos, igual que en la consulta por serie.
+   *
+   * @param code - Código SAP ya validado
+   * @returns El producto, con los nombres de columna de Creatio
+   * @throws {NotFoundException} `PRODUCT_NOT_FOUND` si ningún producto de Creatio tiene ese código
+   * @throws {ExternalServiceError} Si Creatio falla o rechaza la consulta
+   */
+  async getProductByCode(code: string): Promise<ProductResponseDto> {
+    const cacheKey = `${CODE_CACHE_KEY_PREFIX}${code}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const response = await this.odata.get(PRODUCT_ENTITY, productLookupSchema, {
+      $filter: `${PRODUCT_FIELDS.code} eq ${toODataStringLiteral(code)}`,
+      $select: PRODUCT_SELECT,
+      $top: 1,
+    });
+    const [product] = response.value;
+    if (!product) {
+      throw new NotFoundException({ code: PRODUCT_NOT_FOUND_CODE });
+    }
+    this.cache.set(cacheKey, product);
+    return product;
   }
 }
