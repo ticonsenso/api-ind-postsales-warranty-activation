@@ -100,4 +100,40 @@ describe('Products API (e2e)', () => {
       expect(doubles.odata.callRestService).toHaveBeenCalledTimes(1);
     });
   });
+  describe('GET /v1/products/code/:code', () => {
+    // Cada caso usa su propio código para no pisar la caché de productos (TTL 1h) de otro caso.
+    it('returns the Creatio product with that SAP code', async () => {
+      doubles.odata.get.mockResolvedValue({ value: [PRODUCT] });
+
+      const response = await request(app.getHttpServer()).get('/v1/products/code/90002756').expect(200);
+
+      expect(response.body).toEqual({
+        data: PRODUCT,
+        message: 'Producto consultado correctamente',
+        error: null,
+        statusCode: 200,
+      });
+      expect(doubles.odata.get).toHaveBeenCalledWith(
+        'Product',
+        expect.anything(),
+        expect.objectContaining({ $filter: "Code eq '90002756'" })
+      );
+    });
+
+    it('answers 404 PRODUCT_NOT_FOUND when no product has that code', async () => {
+      const response = await request(app.getHttpServer()).get('/v1/products/code/90009999').expect(404);
+
+      expect(response.body).toMatchObject({ data: null, error: 'PRODUCT_NOT_FOUND', statusCode: 404 });
+    });
+
+    it.each([
+      ['has characters outside the allowed set', 'ABC-123'],
+      ['is too long', '1'.repeat(41)],
+    ])('answers 422 without touching Creatio when the code %s', async (_case, code) => {
+      const response = await request(app.getHttpServer()).get(`/v1/products/code/${code}`).expect(422);
+
+      expect(response.body).toMatchObject({ data: null, error: 'VALIDATION_ERROR', statusCode: 422 });
+      expect(doubles.odata.get).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ResponseMessage } from '../../common/decorators/response-message.decorator';
 import { ApiErrorResponses } from '../../common/swagger/api-error-response.decorator';
 import { ApiResponseStructure } from '../../common/swagger/api-response-structure.decorator';
+import { ProductCodeParamsDto } from './dto/product-code-params.dto';
 import { ProductSerialParamsDto } from './dto/product-serial-params.dto';
 import { ProductResponseDto } from './dto/product-response.dto';
 import { ProductsService } from './products.service';
@@ -36,5 +37,25 @@ export class ProductsController {
   )
   async getProductBySerialNumber(@Param() params: ProductSerialParamsDto): Promise<ProductResponseDto> {
     return this.productsService.getProductBySerialNumber(params.serialNumber);
+  }
+
+  /**
+   * Consulta el producto que tiene un código SAP; alternativa cuando SAP no reconoce la serie.
+   *
+   * @param params - Parámetros de ruta validados
+   * @returns El producto con ese código
+   */
+  @Get('code/:code')
+  @ResponseMessage('Producto consultado correctamente')
+  @ApiOperation({ summary: 'Busca en la tabla Product de Creatio el producto con un código SAP.' })
+  @ApiResponseStructure(HttpStatus.OK, ProductResponseDto, 'Producto encontrado.')
+  @ApiErrorResponses(
+    HttpStatus.NOT_FOUND,
+    HttpStatus.UNPROCESSABLE_ENTITY,
+    HttpStatus.TOO_MANY_REQUESTS,
+    HttpStatus.INTERNAL_SERVER_ERROR
+  )
+  async getProductByCode(@Param() params: ProductCodeParamsDto): Promise<ProductResponseDto> {
+    return this.productsService.getProductByCode(params.code);
   }
 }
