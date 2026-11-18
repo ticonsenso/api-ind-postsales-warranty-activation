@@ -1,8 +1,6 @@
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { CreatioODataClient } from '../../src/infrastructure/creatio/creatio-odata.client';
-import { TtlCache } from '../../src/common/cache/ttl-cache';
-import { PROMOTION_CACHE } from '../../src/features/promotions/promotions.constants';
 import { OPENAI_CLIENT } from '../../src/infrastructure/openai/openai-client.provider';
 
 /** Dobles de las integraciones externas (Creatio y OpenAI), para probar la API sin llamarlas. */
@@ -18,13 +16,10 @@ export interface TestDoubles {
  * después de aplicar las variables de entorno de cada prueba.
  *
  * @param env - Variables de entorno adicionales para esta instancia
- * @param promotionCacheTtlMs - Si se indica, reemplaza la caché de promociones por una con este TTL
- *   (por defecto no cachea; las pruebas de la caché la necesitan activa)
  * @returns La aplicación inicializada y los dobles de sus integraciones
  */
 export async function createTestApp(
-  env: Record<string, string> = {},
-  promotionCacheTtlMs?: number
+  env: Record<string, string> = {}
 ): Promise<{ app: NestExpressApplication; doubles: TestDoubles }> {
   Object.assign(process.env, env);
   const { AppModule } = await import('../../src/app.module');
@@ -41,15 +36,12 @@ export async function createTestApp(
     },
     openAiParse: jest.fn(),
   };
-  const builder = Test.createTestingModule({ imports: [AppModule] })
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(CreatioODataClient)
     .useValue(doubles.odata)
     .overrideProvider(OPENAI_CLIENT)
-    .useValue({ responses: { parse: doubles.openAiParse } });
-  if (promotionCacheTtlMs !== undefined) {
-    builder.overrideProvider(PROMOTION_CACHE).useValue(new TtlCache(promotionCacheTtlMs));
-  }
-  const moduleRef = await builder.compile();
+    .useValue({ responses: { parse: doubles.openAiParse } })
+    .compile();
 
   const app = moduleRef.createNestApplication<NestExpressApplication>();
   app.useLogger(false);

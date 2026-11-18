@@ -3,8 +3,7 @@ import { TtlCache } from '../../common/cache/ttl-cache';
 import { CreatioModule } from '../../infrastructure/creatio/creatio.module';
 import { PROMOTION_CACHE, PROMOTION_CACHE_SWEEP_INTERVAL_MS, PROMOTION_CACHE_TTL_MS } from './promotions.constants';
 import { PromotionsController } from './promotions.controller';
-import { CreatioPromotion } from './creatio/creatio-promotion.schema';
-import { PromotionsService } from './promotions.service';
+import { CachedPromotions, PromotionsService } from './promotions.service';
 
 /**
  * Módulo de promociones. La tabla se cachea en memoria (`PROMOTION_CACHE`) para no consultar a Creatio en cada pedido.
@@ -19,7 +18,7 @@ import { PromotionsService } from './promotions.service';
     PromotionsService,
     {
       provide: PROMOTION_CACHE,
-      useFactory: () => new TtlCache<CreatioPromotion[]>(PROMOTION_CACHE_TTL_MS, PROMOTION_CACHE_SWEEP_INTERVAL_MS),
+      useFactory: () => new TtlCache<CachedPromotions>(PROMOTION_CACHE_TTL_MS, PROMOTION_CACHE_SWEEP_INTERVAL_MS),
     },
   ],
 })

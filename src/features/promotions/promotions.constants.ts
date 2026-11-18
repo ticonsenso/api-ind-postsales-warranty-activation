@@ -1,4 +1,4 @@
-const HOURS_IN_CACHE = 0;
+const HOURS_IN_CACHE = 2;
 const MINUTES_PER_HOUR = 60;
 const SECONDS_PER_MINUTE = 60;
 const MILLISECONDS_PER_SECOND = 1000;
@@ -6,7 +6,7 @@ const MILLISECONDS_PER_MINUTE = SECONDS_PER_MINUTE * MILLISECONDS_PER_SECOND;
 const SWEEP_INTERVAL_MINUTES = 15;
 const STALE_RETRY_MINUTES = 15;
 
-/** Token de inyección de la caché de la tabla de promociones (`TtlCache<CreatioPromotion[]>`). */
+/** Token de inyección de la caché de la tabla de promociones (`TtlCache<CachedPromotions>`). */
 export const PROMOTION_CACHE = Symbol('PROMOTION_CACHE');
 
 /** Clave única bajo la que se guarda la tabla completa de promociones. */
