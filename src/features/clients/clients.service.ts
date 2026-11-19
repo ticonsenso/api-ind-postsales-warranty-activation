@@ -5,10 +5,14 @@ import { toODataStringLiteral } from '../../infrastructure/creatio/odata-literal
 import {
   ACCOUNT_ENTITY,
   ACCOUNT_FIELDS,
+  ACCOUNT_IDENTIFICATION_TYPE_FIELD,
   ACCOUNT_ORIGIN_FIELD,
+  ACCOUNT_PERSON_TYPE_FIELD,
   CreatioAccount,
+  PERSON_TYPE_ID,
   QR_WARRANTY_ORIGIN_ID,
   accountLookupSchema,
+  identificationTypeIdFor,
 } from './creatio/creatio-account.schema';
 import { ClientResponseDto } from './dto/client-response.dto';
 import { CreateClientRequestDto } from './dto/create-client-request.dto';
@@ -79,7 +83,12 @@ export class ClientsService {
       throw new ClientAlreadyExistsError();
     }
     const account: CreatioAccount = { [ACCOUNT_FIELDS.id]: idempotencyKey, ...dto };
-    await this.odata.post(ACCOUNT_ENTITY, { ...account, [ACCOUNT_ORIGIN_FIELD]: QR_WARRANTY_ORIGIN_ID });
+    await this.odata.post(ACCOUNT_ENTITY, {
+      ...account,
+      [ACCOUNT_ORIGIN_FIELD]: QR_WARRANTY_ORIGIN_ID,
+      [ACCOUNT_PERSON_TYPE_FIELD]: PERSON_TYPE_ID,
+      [ACCOUNT_IDENTIFICATION_TYPE_FIELD]: identificationTypeIdFor(dto.INDNumeroIdentificacion),
+    });
     return { client: account, created: true };
   }
 
