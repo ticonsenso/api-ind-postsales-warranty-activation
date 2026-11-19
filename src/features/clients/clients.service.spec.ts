@@ -9,6 +9,9 @@ import { ClientAlreadyExistsError } from './errors/client-already-exists.error';
 
 const ACCOUNT_ID = '5b3c2f1e-8a4d-4c6b-9e2f-1a7d3b5c9e01';
 const QR_WARRANTY_ORIGIN_ID = '5d40eb98-efc9-41e0-99c4-828014b9a01f';
+const PERSON_TYPE_ID = '7f7b54c6-bdaf-4faf-8ee6-0a4b23ed09a8';
+const RUC_TYPE_ID = '7e1e3a1f-0db2-45ab-b453-651aac81c67a';
+const CEDULA_TYPE_ID = '252d6ca7-1ecf-4f5a-9a10-baabe962eb62';
 
 const ACCOUNT = {
   Id: ACCOUNT_ID,
@@ -127,15 +130,30 @@ describe('ClientsService', () => {
         Id: ACCOUNT_ID,
         ...NEW_CLIENT,
         INDOrigenId: QR_WARRANTY_ORIGIN_ID,
+        INDTipoPersonaId: PERSON_TYPE_ID,
+        INDTipoIFId: CEDULA_TYPE_ID,
       });
     });
 
-    it('does not expose the fixed origin in the returned client', async () => {
+    it('sends the RUC identification type when the identification has 13 digits', async () => {
+      odata.get.mockResolvedValue({ value: [] });
+
+      await service.createClient(ACCOUNT_ID, { ...NEW_CLIENT, INDNumeroIdentificacion: '0102345678001' });
+
+      expect(odata.post).toHaveBeenCalledWith(
+        'Account',
+        expect.objectContaining({ INDTipoPersonaId: PERSON_TYPE_ID, INDTipoIFId: RUC_TYPE_ID })
+      );
+    });
+
+    it('does not expose the fixed origin, person type or identification type in the returned client', async () => {
       odata.get.mockResolvedValue({ value: [] });
 
       const { client } = await service.createClient(ACCOUNT_ID, NEW_CLIENT);
 
       expect(client).not.toHaveProperty('INDOrigenId');
+      expect(client).not.toHaveProperty('INDTipoPersonaId');
+      expect(client).not.toHaveProperty('INDTipoIFId');
     });
 
     it('checks the retry first and then the identification, before creating anything', async () => {
